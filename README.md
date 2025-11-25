@@ -27,3 +27,15 @@ gleam test  # Run the tests
 
 Cute Card Deck by Dani Maccari
 <https://dani-maccari.itch.io/cute-cards>
+
+
+## Planning and Todos
+- Card ammo system: draw 3-5 face up before needing to reload
+- Spin Lucy on reload, switch to the lucyhappy sprite
+- Lucy starts with the diamond deck, other cards fly in face
+  up like space invaders (possibly from cards on the ground)
+- Implement collision detection
+- On hit, cards stack. Bust: >21 destroys the enemy
+- On blackjack: bonus points, maybe keep the enemy card?
+- Implement poker chip projectile
+    maybe score, maybe enemy bullets that deal damage (reduce score)

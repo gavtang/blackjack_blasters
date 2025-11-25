@@ -15,6 +15,7 @@ import tiramisu/transform
 import vec/vec3
 
 import gleam_community/maths as math
+import tiramisu/debug
 
 pub fn view(model: Model, _ctx: tiramisu.Context(Id)) -> scene.Node(Id) {
   let assert Ok(cam) =
@@ -31,7 +32,7 @@ pub fn view(model: Model, _ctx: tiramisu.Context(Id)) -> scene.Node(Id) {
     scene.camera(
       id: model.MainCamera,
       camera: cam,
-      transform: transform.at(position: vec3.Vec3(0.0, 10.0, 10.0)),
+      transform: transform.at(position: vec3.Vec3(0.0, 6.5, 11.0)),
       look_at: Some(vec3.Vec3(0.0, 0.0, 0.0)),
       active: True,
       viewport: None,
@@ -42,7 +43,7 @@ pub fn view(model: Model, _ctx: tiramisu.Context(Id)) -> scene.Node(Id) {
     scene.light(
       id: model.Ambient,
       light: {
-        let assert Ok(light) = light.ambient(color: 0xffffff, intensity: 1.9)
+        let assert Ok(light) = light.ambient(color: 0xffffff, intensity: 1.3)
         light
       },
       transform: transform.identity,
@@ -51,7 +52,7 @@ pub fn view(model: Model, _ctx: tiramisu.Context(Id)) -> scene.Node(Id) {
       id: model.Directional,
       light: {
         let assert Ok(light) =
-          light.directional(color: 0xffffff, intensity: 1.5)
+          light.directional(color: 0xffffff, intensity: 1.9)
         light
       },
       transform: transform.at(position: vec3.Vec3(10.0, 10.0, 10.0)),
@@ -81,6 +82,9 @@ pub fn view(model: Model, _ctx: tiramisu.Context(Id)) -> scene.Node(Id) {
       view_card(model),
       view_card_backs(model),
       view_lucy(model),
+
+      debug.axes(model.Debug("axes"), vec3.splat(0.0), 5.0),
+      // debug.grid(model.Debug("grid"), 20.0, 20, debug.color_white),
     ]
       |> list.append(lights),
   )
@@ -111,12 +115,12 @@ fn view_lucy(model: Model) -> scene.Node(Id) {
                 |> material.build()
               material
             },
-            transform: transform.at(position: vec3.Vec3(0.0, 1.0, 7.0))
-              |> transform.with_euler_rotation(vec3.Vec3(
-                -1.57,
-                0.0,
-                0.001 *. model.time,
-              )),
+            transform: transform.at(position: model.player.position)
+              |> transform.rotate_x(-1.57)
+              // rotate to lay flat
+              |> transform.rotate_z(-0.13)
+              // slight adjustment to account for sprite angle
+              |> transform.rotate_by(model.player.input_rotation),
             physics: None,
           )
         }),
