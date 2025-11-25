@@ -1,13 +1,15 @@
+import card
 import gleam/dict.{type Dict}
 import gleam/float
 import gleam/javascript/promise
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{Some}
 import gleam_community/maths as math
 import tiramisu
 import tiramisu/asset
 import tiramisu/effect.{type Effect}
 import tiramisu/input
+import tiramisu/physics
 import vec/vec3
 
 pub type Id {
@@ -18,7 +20,8 @@ pub type Id {
   Lucy
   Platform
   Sphere
-  Card(Int)
+  CardContainer
+  CardId(Int)
   CardBacks
   Debug(String)
 }
@@ -29,6 +32,7 @@ pub type Model {
     textures: Dict(String, asset.Texture),
     loading_complete: Bool,
     player: Player,
+    cards: List(card.Card),
   )
 }
 
@@ -59,7 +63,12 @@ pub fn init(
         input_rotation: vec3.splat(0.0),
         reload_rotation: vec3.splat(0.0),
       ),
+      cards: [],
     )
+
+  // create a physics world with no gravity
+  let physics_world =
+    physics.new_world(physics.WorldConfig(gravity: vec3.splat(0.0)))
 
   let sprite_urls = [#("lucy", "./lucy.png"), #("cards", "CuteCards.png")]
 
@@ -75,7 +84,11 @@ pub fn init(
         }),
       )
     })
-  #(model, effect.batch([effect.tick(Tick), ..load_effects]), None)
+  #(
+    model,
+    effect.batch([effect.tick(Tick), ..load_effects]),
+    Some(physics_world),
+  )
 }
 
 pub fn update(
@@ -83,12 +96,16 @@ pub fn update(
   msg: Msg,
   ctx: tiramisu.Context(Id),
 ) -> #(Model, Effect(Msg), option.Option(_)) {
+  let assert Some(physics_world) = ctx.physics_world
   case msg {
-    NoOp -> #(model, effect.none(), None)
+    NoOp -> #(model, effect.none(), ctx.physics_world)
     Tick -> {
       let dt = ctx.delta_time
+
+      let new_physics_world = physics.step(physics_world, ctx.delta_time)
       let new_time = model.time +. dt
 
+      // Handle player input
       let move_speed = 5.0
       let dx = case
         input.is_key_pressed(ctx.input, input.KeyD),
@@ -99,6 +116,7 @@ pub fn update(
         _, _ -> 0.0
       }
 
+      // Update player position
       let field_size = 10.0
       let new_player_position =
         vec3.Vec3(
@@ -111,6 +129,7 @@ pub fn update(
           model.player.position.z,
         )
 
+      // Update rotation state for direction indicator
       let new_player_input_rotation =
         vec3.splat(0.0)
         |> vec3.replace_z(float.clamp(
@@ -130,7 +149,7 @@ pub fn update(
           ),
         ),
         effect.tick(Tick),
-        None,
+        Some(new_physics_world),
       )
     }
     TextureLoaded(name, tex) -> {
@@ -139,7 +158,7 @@ pub fn update(
       #(
         Model(..model, textures: new_textures, loading_complete:),
         effect.none(),
-        None,
+        ctx.physics_world,
       )
     }
   }

@@ -135,7 +135,7 @@ fn view_card(model: Model) -> scene.Node(Id) {
   case model.loading_complete {
     False ->
       scene.empty(
-        id: model.Card(1),
+        id: model.CardContainer,
         transform: transform.identity,
         children: [],
       )
@@ -149,7 +149,7 @@ fn view_card(model: Model) -> scene.Node(Id) {
           let card_frame = spritesheet.apply_frame(cards_sheet, card_tex, 1)
 
           scene.mesh(
-            id: model.Card(1),
+            id: model.CardId(1),
             geometry: {
               let assert Ok(geometry) = geometry.plane(width: 1.5, height: 2.0)
               geometry
@@ -178,7 +178,7 @@ fn view_card(model: Model) -> scene.Node(Id) {
       ]
       |> result.values()
       |> scene.empty(
-        id: model.Card(1),
+        id: model.CardContainer,
         transform: transform.identity,
         children: _,
       )
