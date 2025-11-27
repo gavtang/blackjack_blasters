@@ -39,3 +39,10 @@ Cute Card Deck by Dani Maccari
 - On blackjack: bonus points, maybe keep the enemy card?
 - Implement poker chip projectile
     maybe score, maybe enemy bullets that deal damage (reduce score)
+
+## Physics notes
+- Need dynamic bodies for collisions to be detected
+- Can't currently switch body types, need to delete items based on phase
+- Node deletions are handled automatically based on diffing the node tree - but need different ID types
+- This does mean aligning positions manually - whenever the item changes, grabbing the position to assign it an inital
+- Alternatively: handle collision detection manually

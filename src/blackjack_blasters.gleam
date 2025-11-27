@@ -1,8 +1,6 @@
-import gleam/dict.{type Dict}
-import gleam/option.{None, Some}
+import gleam/option
 import tiramisu
 import tiramisu/background
-import tiramisu/effect.{type Effect}
 
 import model
 import view

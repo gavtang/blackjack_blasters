@@ -3,7 +3,7 @@ import gleam/dict.{type Dict}
 import gleam/float
 import gleam/javascript/promise
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{type Option, Some}
 import gleam_community/maths as math
 import tiramisu
 import tiramisu/asset
@@ -21,14 +21,18 @@ pub type Id {
   Platform
   Sphere
   CardContainer
+  // FIXME MAYBE add more card id variants
   CardId(Int)
-  CardBacks
+  CardProjectileId(Int)
+  CardBacks(Int)
+  CardBacksContainer
   Debug(String)
 }
 
 pub type Model {
   Model(
     time: Float,
+    next_id: Int,
     textures: Dict(String, asset.Texture),
     loading_complete: Bool,
     player: Player,
@@ -56,6 +60,7 @@ pub fn init(
   let model =
     Model(
       time: 0.0,
+      next_id: 0,
       textures: dict.new(),
       loading_complete: False,
       player: Player(
@@ -63,13 +68,20 @@ pub fn init(
         input_rotation: vec3.splat(0.0),
         reload_rotation: vec3.splat(0.0),
       ),
-      cards: [],
+      cards: [
+        // TODO this should start blank
+      // TODO add a Msg / Update to add cards
+      // card.CardProjectile(
+      //   card.CardDef(suit: card.Hearts, rank: card.Rank(3)),
+      //   id: 1,
+      // ),
+      ],
     )
 
   // create a physics world with no gravity
   let physics_world =
     physics.new_world(physics.WorldConfig(gravity: vec3.splat(0.0)))
-
+  // |> physics.apply_impulse(CardId(1), vec3.Vec3(0.0, 0.0, 10.0))
   let sprite_urls = [#("lucy", "./lucy.png"), #("cards", "CuteCards.png")]
 
   let load_effects =
@@ -102,7 +114,7 @@ pub fn update(
     Tick -> {
       let dt = ctx.delta_time
 
-      let new_physics_world = physics.step(physics_world, ctx.delta_time)
+      // |> physics.apply_force(CardId(1), vec3.Vec3(0.0, 0.0, 0.01))
       let new_time = model.time +. dt
 
       // Handle player input
@@ -115,6 +127,61 @@ pub fn update(
         False, True -> 0.0 -. move_speed *. dt /. 1000.0
         _, _ -> 0.0
       }
+
+      // TODO refactor cards to start initialized. Exactly 1 deck, player has diamonds
+
+      // let #(physics_world, new_cards) =
+      //   model.cards
+      //   |> list.fold(#(physics_world, []), fn(acc, c) {
+      //     let #(world, cards_acc) = acc
+      //     case c.initialized {
+      //       True -> #(world, [c, ..cards_acc])
+      //       False -> #(
+      //         physics.apply_impulse(
+      //           world,
+      //           CardProjectileId(c.id),
+      //           vec3.Vec3(0.0, 0.0, -8.0),
+      //         )
+      //           |> physics.apply_torque_impulse(
+      //             CardProjectileId(c.id),
+      //             vec3.Vec3(0.0, 0.9, 0.1),
+      //           ),
+      //         [card.CardProjectile(..c, initialized: True), ..cards_acc],
+      //       )
+      //     }
+      //   })
+
+      // let new_cards = list.reverse(new_cards)
+
+      // let #(new_cards, next_id) = case
+      //   input.is_key_just_pressed(ctx.input, input.Space)
+      // {
+      //   True -> #(
+      //     new_cards
+      //       |> list.append([
+      //         card.CardProjectile(
+      //           def: card.CardDef(suit: card.Spades, rank: card.Rank(1)),
+      //           id: model.next_id + 1,
+      //           initialized: False,
+      //           lifetime: 3.0,
+      //         ),
+      //       ]),
+      //     model.next_id + 1,
+      //   )
+      //   False -> #(new_cards, model.next_id)
+      // }
+
+      // // Handle card transitions
+      // // TODO add collision detection
+      // let new_cards =
+      //   new_cards
+      //   |> list.map(fn(c) {
+      //     case c {
+      //       card.CardProjectile(id, def, True, lifetime) if lifetime <=. 0.0 ->
+      //         card.CardTransition(id, def)
+      //       _ -> c
+      //     }
+      //   })
 
       // Update player position
       let field_size = 10.0
@@ -138,6 +205,8 @@ pub fn update(
           0.25,
         ))
 
+      let new_physics_world = physics.step(physics_world, ctx.delta_time)
+
       #(
         Model(
           ..model,
@@ -147,6 +216,8 @@ pub fn update(
             position: new_player_position,
             input_rotation: new_player_input_rotation,
           ),
+          // cards: new_cards,
+        // next_id: next_id,
         ),
         effect.tick(Tick),
         Some(new_physics_world),
