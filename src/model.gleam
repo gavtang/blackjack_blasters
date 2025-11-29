@@ -1,15 +1,18 @@
 import card
 import gleam/dict.{type Dict}
 import gleam/float
+import gleam/int
 import gleam/javascript/promise
 import gleam/list
-import gleam/option.{type Option, Some}
+import gleam/option.{Some}
 import gleam_community/maths as math
 import tiramisu
+import tiramisu/animation
 import tiramisu/asset
 import tiramisu/effect.{type Effect}
 import tiramisu/input
 import tiramisu/physics
+import tiramisu/transform
 import vec/vec3
 
 pub type Id {
@@ -24,6 +27,7 @@ pub type Id {
   // FIXME MAYBE add more card id variants
   CardId(Int)
   CardProjectileId(Int)
+  CardTransitionId(Int)
   CardBacks(Int)
   CardBacksContainer
   Debug(String)
@@ -37,7 +41,19 @@ pub type Model {
     loading_complete: Bool,
     player: Player,
     cards: List(card.Card),
+    // HACK CardProjectile ONLY
+    deck: List(card.Card),
+    // HACK CardTransition ONLY
+    staged_cards: List(card.Card),
+    card_cooldown: Float,
+    reload_timer: Float,
+    player_state: PlayerState,
   )
+}
+
+pub type PlayerState {
+  Ready
+  Reloading
 }
 
 pub type Player {
@@ -60,7 +76,8 @@ pub fn init(
   let model =
     Model(
       time: 0.0,
-      next_id: 0,
+      // HACK
+      next_id: 1000,
       textures: dict.new(),
       loading_complete: False,
       player: Player(
@@ -68,21 +85,23 @@ pub fn init(
         input_rotation: vec3.splat(0.0),
         reload_rotation: vec3.splat(0.0),
       ),
-      cards: [
-        // TODO this should start blank
-      // TODO add a Msg / Update to add cards
-      // card.CardProjectile(
-      //   card.CardDef(suit: card.Hearts, rank: card.Rank(3)),
-      //   id: 1,
-      // ),
-      ],
+      cards: [],
+      deck: card.base_deck(),
+      staged_cards: [],
+      // WARN card projectiles ONLY
+      card_cooldown: 0.0,
+      reload_timer: 0.0,
+      player_state: Ready,
     )
 
   // create a physics world with no gravity
   let physics_world =
     physics.new_world(physics.WorldConfig(gravity: vec3.splat(0.0)))
-  // |> physics.apply_impulse(CardId(1), vec3.Vec3(0.0, 0.0, 10.0))
-  let sprite_urls = [#("lucy", "./lucy.png"), #("cards", "CuteCards.png")]
+  let sprite_urls = [
+    #("lucy", "./lucy.png"),
+    #("cards", "CuteCards.png"),
+    #("lucyhappy", "./lucyhappy.png"),
+  ]
 
   let load_effects =
     list.map(sprite_urls, fn(item) {
@@ -128,60 +147,165 @@ pub fn update(
         _, _ -> 0.0
       }
 
-      // TODO refactor cards to start initialized. Exactly 1 deck, player has diamonds
+      let #(physics_world, new_cards) =
+        model.cards
+        |> list.fold(#(physics_world, []), fn(acc, c) {
+          let #(world, cards_acc) = acc
+          let assert card.CardProjectile(_, _, _, _) = c
+          // HACK
+          case c.initialized {
+            True -> #(world, [c, ..cards_acc])
+            False -> #(
+              physics.apply_impulse(
+                world,
+                CardProjectileId(c.id),
+                vec3.Vec3(0.0, 0.0, -8.0),
+              )
+                |> physics.apply_torque_impulse(
+                  CardProjectileId(c.id),
+                  vec3.Vec3(0.0, 0.9, 0.1),
+                ),
+              [card.CardProjectile(..c, initialized: True), ..cards_acc],
+            )
+          }
+        })
 
-      // let #(physics_world, new_cards) =
-      //   model.cards
-      //   |> list.fold(#(physics_world, []), fn(acc, c) {
-      //     let #(world, cards_acc) = acc
-      //     case c.initialized {
-      //       True -> #(world, [c, ..cards_acc])
-      //       False -> #(
-      //         physics.apply_impulse(
-      //           world,
-      //           CardProjectileId(c.id),
-      //           vec3.Vec3(0.0, 0.0, -8.0),
-      //         )
-      //           |> physics.apply_torque_impulse(
-      //             CardProjectileId(c.id),
-      //             vec3.Vec3(0.0, 0.9, 0.1),
-      //           ),
-      //         [card.CardProjectile(..c, initialized: True), ..cards_acc],
-      //       )
-      //     }
-      //   })
+      let new_cards = list.reverse(new_cards)
 
-      // let new_cards = list.reverse(new_cards)
+      let #(new_cards, next_id, new_staged_cards, new_card_cooldown) = case
+        input.is_key_just_pressed(ctx.input, input.Space),
+        model.card_cooldown,
+        model.reload_timer,
+        model.staged_cards
+      {
+        True, 0.0, 0.0, [first, ..rest] -> {
+          echo first
+          echo rest
+          #(
+            new_cards
+              |> list.append([
+                card.CardProjectile(
+                  // def: card.CardDef(suit: card.Diamonds, rank: card.Rank(13)),
+                  def: first.def,
+                  id: model.next_id + 1,
+                  initialized: False,
+                  lifetime: 2.0,
+                ),
+              ]),
+            model.next_id + 1,
+            rest,
+            400.0,
+          )
+        }
+        _, _, _, _ -> #(
+          new_cards,
+          model.next_id,
+          model.staged_cards,
+          model.card_cooldown,
+        )
+      }
 
-      // let #(new_cards, next_id) = case
-      //   input.is_key_just_pressed(ctx.input, input.Space)
-      // {
-      //   True -> #(
-      //     new_cards
-      //       |> list.append([
-      //         card.CardProjectile(
-      //           def: card.CardDef(suit: card.Spades, rank: card.Rank(1)),
-      //           id: model.next_id + 1,
-      //           initialized: False,
-      //           lifetime: 3.0,
-      //         ),
-      //       ]),
-      //     model.next_id + 1,
-      //   )
-      //   False -> #(new_cards, model.next_id)
-      // }
+      // echo new_staged_cards
 
-      // // Handle card transitions
-      // // TODO add collision detection
-      // let new_cards =
-      //   new_cards
-      //   |> list.map(fn(c) {
-      //     case c {
-      //       card.CardProjectile(id, def, True, lifetime) if lifetime <=. 0.0 ->
-      //         card.CardTransition(id, def)
-      //       _ -> c
-      //     }
-      //   })
+      let #(new_cards, d_returning_cards) =
+        new_cards
+        |> list.map(fn(c) {
+          case c {
+            card.CardProjectile(_, _, True, lifetime) ->
+              card.CardProjectile(
+                ..c,
+                lifetime: lifetime -. ctx.delta_time /. 1000.0,
+              )
+            _ -> c
+          }
+        })
+        |> list.partition(fn(c) {
+          case c {
+            card.CardProjectile(_, _, True, lifetime) if lifetime <=. 0.0 ->
+              False
+            _ -> True
+          }
+        })
+
+      let deck_base_vec = card.deck_base_vec()
+      let #(deck_bump_n, d_returning_cards) =
+        list.map_fold(d_returning_cards, 0.0, fn(acc, d_card) {
+          // Get physics for initial position
+          let end =
+            transform.at(deck_base_vec)
+            |> transform.translate(vec3.Vec3(0.0, acc, 0.0))
+            |> transform.with_euler_rotation(vec3.Vec3(
+              math.pi() /. 2.0,
+              0.0,
+              0.0,
+            ))
+          echo end
+          let start = case
+            physics.get_transform(physics_world, CardProjectileId(d_card.id))
+          {
+            Ok(trans) -> trans
+            Error(Nil) -> end
+          }
+
+          #(
+            acc +. 0.03,
+            card.CardTransition(
+              d_card.id,
+              d_card.def,
+              animation.tween_transform(
+                start,
+                end,
+                1000.0,
+                animation.EaseInOutSine,
+              ),
+            ),
+          )
+        })
+
+      // bump existing deck up by the amount of cards added to the bottom
+      let bumped_deck =
+        list.map(model.deck, fn(card_to_bump) {
+          case card_to_bump {
+            card.CardTransition(id, def, tween) ->
+              card.CardTransition(
+                id,
+                def,
+                animation.Tween(
+                  ..tween,
+                  end_value: tween.end_value
+                    |> transform.translate(vec3.Vec3(0.0, deck_bump_n, 0.0)),
+                ),
+              )
+            _ -> card_to_bump
+          }
+        })
+      // TODO bump y height 
+      let new_returning_cards = list.append(d_returning_cards, bumped_deck)
+
+      // apply kinematic movement and update tweens
+      let #(physics_world, new_deck) =
+        new_returning_cards
+        |> list.map_fold(physics_world, fn(phy, c) {
+          case c {
+            card.CardTransition(id, def, tween) -> {
+              let new_card =
+                card.CardTransition(
+                  id,
+                  def,
+                  tween |> animation.update_tween(dt),
+                )
+              let v = animation.get_tween_value(new_card.tween)
+              let new_physics =
+                physics.set_kinematic_translation(
+                  phy,
+                  CardTransitionId(id),
+                  transform.position(v),
+                )
+              #(new_physics, new_card)
+            }
+            _ -> #(phy, c)
+          }
+        })
 
       // Update player position
       let field_size = 10.0
@@ -205,6 +329,67 @@ pub fn update(
           0.25,
         ))
 
+      // Reload staged cards from deck
+      let staged_base_vec = vec3.Vec3(1.0, -1.5, 7.0)
+      let #(new_deck, new_staged, new_reload_timer) = case
+        new_staged_cards,
+        list.reverse(new_deck)
+      {
+        [], [one, two, three, ..rest] -> {
+          let new_staged =
+            [one, two, three]
+            |> list.index_map(fn(c, i) {
+              case c {
+                card.CardTransition(id, def, tween) -> {
+                  let current = animation.get_tween_value(tween)
+                  card.CardTransition(
+                    id,
+                    def,
+                    animation.Tween(
+                      ..tween,
+                      elapsed: 0.0,
+                      start_value: current,
+                      end_value: transform.at(staged_base_vec)
+                        |> transform.translate(vec3.Vec3(
+                          0.0 -. int.to_float(i),
+                          0.0,
+                          0.0 -. int.to_float(i) *. 0.02,
+                        )),
+                    ),
+                  )
+                }
+                _ -> c
+              }
+            })
+          #(list.reverse(rest), new_staged, 1000.0)
+        }
+        _, _ -> #(new_deck, new_staged_cards, model.reload_timer)
+      }
+
+      let #(physics_world, new_staged) =
+        new_staged
+        |> list.map_fold(physics_world, fn(phy, c) {
+          case c {
+            card.CardTransition(id, def, tween) -> {
+              let new_card =
+                card.CardTransition(
+                  id,
+                  def,
+                  tween |> animation.update_tween(dt),
+                )
+              let v = animation.get_tween_value(tween)
+              let new_physics =
+                physics.set_kinematic_translation(
+                  phy,
+                  CardTransitionId(id),
+                  transform.position(v),
+                )
+              #(new_physics, new_card)
+            }
+            _ -> #(phy, c)
+          }
+        })
+
       let new_physics_world = physics.step(physics_world, ctx.delta_time)
 
       #(
@@ -216,8 +401,12 @@ pub fn update(
             position: new_player_position,
             input_rotation: new_player_input_rotation,
           ),
-          // cards: new_cards,
-        // next_id: next_id,
+          cards: new_cards,
+          deck: new_deck,
+          staged_cards: new_staged,
+          next_id: next_id,
+          card_cooldown: float.max(new_card_cooldown -. dt, 0.0),
+          reload_timer: float.max(new_reload_timer -. dt, 0.0),
         ),
         effect.tick(Tick),
         Some(new_physics_world),
