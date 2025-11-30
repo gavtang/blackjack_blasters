@@ -1,6 +1,7 @@
 # Blackjack Blasters
 This game was created for the 2025 Gleam Game Jam!
 
+![Gameplay Screenshot](gameplay.png)
 
 ## Running the Game
 ```sh
@@ -10,7 +11,7 @@ gleam run -m mascarpone bundle # Build a desktop bundle
 
 Also playable on itch.io: <https://gavtang.itch.io/blackjack-blasters>
 
-## Rules
+## How to Play
 Launch cards from your hand at other cards that are flying on the screen
 Try to make clusters add up to a blackjack! (Ace = 1 or 11 | K Q J = 10)
 If you make a blackjack, keep all the cards. If you bust, only the cards you launched return to your deck.
