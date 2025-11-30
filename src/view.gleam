@@ -1,4 +1,5 @@
 import card
+import enemy
 import gleam/dict
 import gleam/list
 import gleam/option.{None, Some}
@@ -26,9 +27,10 @@ pub fn view(
 ) -> scene.Node(model.Id) {
   let assert Ok(cam) =
     camera.perspective(field_of_view: 75.0, near: 0.1, far: 1000.0)
-  let assert Ok(ground_geom) = geometry.plane(width: 20.0, height: 20.0)
+  // let assert Ok(ground_geom) = geometry.plane(width: 100.0, height: 20.0)
+  let assert Ok(ground_geom) = geometry.circle(radius: 50.0, segments: 30)
   let assert Ok(ground_mat) =
-    material.new() |> material.with_color(0x808080) |> material.build
+    material.new() |> material.with_color(0x10b223) |> material.build
 
   let camera =
     scene.camera(
@@ -70,16 +72,15 @@ pub fn view(
         id: model.Platform,
         geometry: ground_geom,
         material: ground_mat,
-        transform: transform.at(position: vec3.Vec3(0.0, -2.5, 0.0))
+        transform: transform.at(position: vec3.Vec3(0.0, -2.5, 40.0))
           |> transform.with_euler_rotation(vec3.Vec3(-1.57, 0.0, 0.0)),
         physics: None,
       ),
       view_card(model, ctx),
       view_card_backs(model, ctx),
       view_lucy(model),
-
-      debug.axes(model.Debug("axes"), vec3.splat(0.0), 5.0),
-      // debug.grid(model.Debug("grid"), 20.0, 20, debug.color_white),
+      // debug.axes(model.Debug("axes"), vec3.splat(0.0), 5.0),
+    // debug.grid(model.Debug("grid"), 20.0, 20, debug.color_white),
     ]
       |> list.append(lights),
   )
@@ -149,6 +150,8 @@ fn view_card(
       model.cards
       |> list.append(model.deck)
       |> list.append(model.staged_cards)
+      |> list.append(enemy.enemy_flatten_cards(model.enemy_deck))
+      |> list.append(enemy.enemy_flatten_cards(model.enemies))
       |> list.map(fn(current_card) {
         // [
         dict.get(model.textures, "cards")
@@ -172,16 +175,17 @@ fn view_card(
                   physics.new_rigid_body(physics.Dynamic)
                   |> physics.with_collider(physics.Box(
                     transform.identity,
+                    2.0,
                     1.0,
-                    1.0,
-                    1.0,
+                    1.5,
                   ))
                   |> physics.with_mass(1.0)
                   |> physics.with_restitution(0.4)
                   |> physics.with_friction(0.6)
+                  |> physics.with_collision_events()
                   |> physics.with_collision_groups(
                     membership: [0],
-                    can_collide_with: [],
+                    can_collide_with: [2],
                   )
                   |> physics.build(),
                 ),
@@ -213,6 +217,28 @@ fn view_card(
                 model.CardTransitionId(id),
                 animation.get_tween_value(tween),
               )
+            card.CardContained(id, _, _, tween) -> #(
+              Some(
+                physics.new_rigid_body(physics.Kinematic)
+                |> physics.with_collider(physics.Box(
+                  transform.identity,
+                  2.0,
+                  1.0,
+                  1.5,
+                ))
+                |> physics.with_mass(1.0)
+                |> physics.with_restitution(0.4)
+                |> physics.with_friction(0.6)
+                |> physics.with_collision_groups(
+                  membership: [2],
+                  can_collide_with: [0],
+                )
+                |> physics.build(),
+              ),
+              model.CardContainedId(id),
+              animation.get_tween_value(tween),
+              // HACK HACK HACK
+            )
           }
 
           scene.mesh(
@@ -275,6 +301,8 @@ fn view_card_backs(
         model.cards
         |> list.append(model.deck)
         |> list.append(model.staged_cards)
+        |> list.append(enemy.enemy_flatten_cards(model.enemy_deck))
+        |> list.append(enemy.enemy_flatten_cards(model.enemies))
         // TODO Swap with card concat
         |> list.map(fn(c) {
           let id = case c {
@@ -283,6 +311,7 @@ fn view_card_backs(
 
             card.CardTransition(card_id, _, _) ->
               model.CardTransitionId(card_id)
+            card.CardContained(id, _, _, _tween) -> model.CardContainedId(id)
           }
 
           physics.get_transform(physics_world, id)

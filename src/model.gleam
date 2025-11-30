@@ -1,4 +1,5 @@
 import card
+import enemy
 import gleam/dict.{type Dict}
 import gleam/float
 import gleam/int
@@ -28,6 +29,7 @@ pub type Id {
   CardId(Int)
   CardProjectileId(Int)
   CardTransitionId(Int)
+  CardContainedId(Int)
   CardBacks(Int)
   CardBacksContainer
   Debug(String)
@@ -48,6 +50,10 @@ pub type Model {
     card_cooldown: Float,
     reload_timer: Float,
     player_state: PlayerState,
+    enemies: List(enemy.Enemy),
+    enemy_deck: List(enemy.Enemy),
+    blackjack_buffer: List(card.Card),
+    bust_buffer: List(card.Card),
   )
 }
 
@@ -92,6 +98,10 @@ pub fn init(
       card_cooldown: 0.0,
       reload_timer: 0.0,
       player_state: Ready,
+      enemies: [],
+      enemy_deck: enemy.enemy_base_deck(),
+      blackjack_buffer: [],
+      bust_buffer: [],
     )
 
   // create a physics world with no gravity
@@ -179,13 +189,10 @@ pub fn update(
         model.staged_cards
       {
         True, 0.0, 0.0, [first, ..rest] -> {
-          echo first
-          echo rest
           #(
             new_cards
               |> list.append([
                 card.CardProjectile(
-                  // def: card.CardDef(suit: card.Diamonds, rank: card.Rank(13)),
                   def: first.def,
                   id: model.next_id + 1,
                   initialized: False,
@@ -205,8 +212,7 @@ pub fn update(
         )
       }
 
-      // echo new_staged_cards
-
+      // get cards returning to deck
       let #(new_cards, d_returning_cards) =
         new_cards
         |> list.map(fn(c) {
@@ -226,6 +232,19 @@ pub fn update(
             _ -> True
           }
         })
+      // add returning cards from blackjack and bust buffers
+      let d_returning_cards =
+        d_returning_cards
+        |> list.append(model.blackjack_buffer)
+        |> list.append(
+          model.bust_buffer
+          |> list.filter(fn(buster) {
+            case buster {
+              card.CardContained(_, _, card.Player, _) -> True
+              _ -> False
+            }
+          }),
+        )
 
       let deck_base_vec = card.deck_base_vec()
       let #(deck_bump_n, d_returning_cards) =
@@ -239,12 +258,14 @@ pub fn update(
               0.0,
               0.0,
             ))
-          echo end
           let start = case
-            physics.get_transform(physics_world, CardProjectileId(d_card.id))
+            physics.get_transform(physics_world, CardProjectileId(d_card.id)),
+            d_card
           {
-            Ok(trans) -> trans
-            Error(Nil) -> end
+            Ok(trans), _ -> trans
+            Error(Nil), card.CardContained(_, _, _, tween) ->
+              animation.get_tween_value(tween)
+            Error(Nil), _ -> end
           }
 
           #(
@@ -279,7 +300,6 @@ pub fn update(
             _ -> card_to_bump
           }
         })
-      // TODO bump y height 
       let new_returning_cards = list.append(d_returning_cards, bumped_deck)
 
       // apply kinematic movement and update tweens
@@ -305,6 +325,165 @@ pub fn update(
             }
             _ -> #(phy, c)
           }
+        })
+
+      let #(enemy_deck_bump_n, returning_enemy_cards) =
+        model.bust_buffer
+        |> list.filter(fn(buster) {
+          case buster {
+            card.CardContained(_, _, card.Enemy, _) -> True
+            _ -> False
+          }
+        })
+        |> list.map_fold(0.0, fn(acc, c) {
+          let end =
+            transform.at(enemy.enemy_deck_base_vec())
+            |> transform.translate(vec3.Vec3(0.0, acc, 0.0))
+            |> transform.with_euler_rotation(vec3.Vec3(
+              math.pi() /. 2.0,
+              0.0,
+              0.0,
+            ))
+          let start = case c {
+            card.CardContained(_, _, _, tween) ->
+              animation.get_tween_value(tween)
+            _ -> end
+          }
+
+          #(
+            acc +. 0.03,
+            enemy.Enemy(
+              [
+                card.CardContained(
+                  c.id,
+                  c.def,
+                  card.Enemy,
+                  animation.tween_transform(
+                    start,
+                    end,
+                    1000.0,
+                    animation.EaseInOutSine,
+                  ),
+                ),
+              ],
+              animation.tween_transform(
+                start,
+                end,
+                1000.0,
+                animation.EaseInOutSine,
+              ),
+            ),
+          )
+        })
+
+      let new_enemy_deck = list.append(returning_enemy_cards, model.enemy_deck)
+      // TODO implement cards returning to enemy deck
+
+      let new_enemy_deck =
+        list.map(new_enemy_deck, fn(enemy_to_bump) {
+          let enemy.Enemy(cards, tween) = enemy_to_bump
+          enemy.Enemy(
+            cards,
+            animation.Tween(
+              ..tween,
+              end_value: tween.end_value
+                |> transform.translate(vec3.Vec3(0.0, enemy_deck_bump_n, 0.0)),
+            ),
+          )
+        })
+
+      let #(physics_world, new_enemy_deck) =
+        new_enemy_deck
+        |> list.map_fold(physics_world, fn(phy, e) {
+          let enemy.Enemy(cards, tween) = e
+          let new_tween = tween |> animation.update_tween(dt)
+          let new_cards =
+            cards
+            |> list.map(fn(c) {
+              case c {
+                card.CardContained(id, def, team, _) ->
+                  card.CardContained(id, def, team, new_tween)
+                _ -> c
+              }
+            })
+          let new_enemy = enemy.Enemy(new_cards, new_tween)
+          let v = animation.get_tween_value(new_enemy.tween)
+
+          // these should be length one. should be structured differently, :L
+          let new_physics =
+            list.fold(cards, phy, fn(phy2, c) {
+              physics.set_kinematic_translation(
+                phy2,
+                CardContainedId(c.id),
+                transform.position(v),
+              )
+            })
+
+          #(new_physics, new_enemy)
+        })
+
+      // keep 5 enemies on the screen at a time
+      let #(new_enemies, new_enemy_deck) = case
+        list.length(model.enemies),
+        list.reverse(new_enemy_deck)
+      {
+        enemies_length, [first, ..rest] if enemies_length < 3 -> #(
+          [first, ..model.enemies],
+          list.reverse(rest),
+        )
+        _, _ -> #(model.enemies, new_enemy_deck)
+      }
+
+      // update enemy movement
+      // update tweens and set new end target if finished
+      let new_enemies =
+        new_enemies
+        |> list.map(fn(e) {
+          let e = case e.tween.elapsed {
+            elapsed if elapsed >=. e.tween.duration ->
+              enemy.Enemy(
+                ..e,
+                tween: animation.tween_transform(
+                  e.tween.end_value,
+                  enemy.random_valid_target(),
+                  2500.0,
+                  animation.EaseInOutSine,
+                ),
+              )
+            _ -> enemy.Enemy(..e, tween: animation.update_tween(e.tween, dt))
+          }
+          let #(_, new_enemy_cards) =
+            e.cards
+            |> list.map_fold(0.0, fn(acc, c) {
+              case c {
+                card.CardContained(id, def, team, _tween) -> #(
+                  acc +. 1.0,
+                  card.CardContained(
+                    id,
+                    def,
+                    team,
+                    animation.Tween(
+                      ..e.tween,
+                      start_value: e.tween.start_value
+                        |> transform.translate(vec3.Vec3(
+                          acc *. 0.9,
+                          acc *. 0.01,
+                          acc *. 0.3,
+                        )),
+                      end_value: e.tween.end_value
+                        |> transform.translate(vec3.Vec3(
+                          acc *. 0.9,
+                          acc *. 0.01,
+                          acc *. 0.3,
+                        )),
+                    ),
+                  ),
+                )
+                _ -> #(acc, c)
+              }
+            })
+
+          enemy.Enemy(..e, cards: new_enemy_cards)
         })
 
       // Update player position
@@ -391,6 +570,114 @@ pub fn update(
         })
 
       let new_physics_world = physics.step(physics_world, ctx.delta_time)
+      let collision_events =
+        physics.get_collision_events(new_physics_world)
+        |> list.filter_map(fn(event) {
+          case event {
+            physics.CollisionStarted(
+              CardContainedId(enemy_id),
+              CardProjectileId(player_card_id),
+            ) -> {
+              // map through to get the card def from id
+              let found_card =
+                list.find(new_cards, fn(c) { player_card_id == c.id })
+              case found_card {
+                Ok(card.CardProjectile(_, def, _, _)) ->
+                  Ok(#(def, player_card_id, enemy_id))
+                _ -> Error("not a real card ?")
+              }
+            }
+            physics.CollisionStarted(
+              CardProjectileId(player_card_id),
+              CardContainedId(enemy_id),
+            ) -> {
+              // map through to get the card def from id
+              // something something DRY
+              let found_card =
+                list.find(new_cards, fn(c) { player_card_id == c.id })
+              case found_card {
+                Ok(card.CardProjectile(_, def, _, _)) ->
+                  Ok(#(def, player_card_id, enemy_id))
+                _ -> Error("not a real card ?")
+              }
+            }
+            _ -> Error("do not care about this collision")
+          }
+        })
+
+      let ids_to_remove =
+        collision_events
+        |> list.map(fn(event) {
+          let #(_, id, _) = event
+          id
+        })
+
+      let enemy_ids_gaining =
+        collision_events
+        |> list.map(fn(event) {
+          let #(_, _, id) = event
+          id
+        })
+
+      let new_cards =
+        list.filter(new_cards, fn(c) { !list.contains(ids_to_remove, c.id) })
+
+      let new_enemies =
+        list.map(new_enemies, fn(enemy) {
+          case
+            list.any(enemy.cards, fn(enemy_card) {
+              list.contains(enemy_ids_gaining, enemy_card.id)
+            })
+          {
+            True -> {
+              let eids = list.map(enemy.cards, fn(e) { e.id })
+              let relevant_event =
+                list.find(collision_events, fn(event) {
+                  let #(_def, _pid, eid) = event
+                  list.contains(eids, eid)
+                })
+              case relevant_event {
+                Ok(#(def, id, _)) -> {
+                  let new_cards =
+                    list.append(enemy.cards, [
+                      card.CardContained(id, def, card.Player, enemy.tween),
+                    ])
+                  enemy.Enemy(..enemy, cards: new_cards)
+                }
+                _ -> {
+                  enemy
+                }
+              }
+            }
+            False -> enemy
+          }
+        })
+
+      let #(cards_to_explode, new_enemies) =
+        list.partition(new_enemies, fn(e) {
+          case enemy.enemy_score(e) {
+            enemy.Score(21, _) -> True
+            enemy.Score(_, 21) -> True
+            enemy.Score(low, _) if low > 21 -> True
+            enemy.Score(_, _) -> False
+          }
+        })
+
+      let #(blackjacks, busts) =
+        list.partition(cards_to_explode, fn(e) {
+          case enemy.enemy_score(e) {
+            enemy.Score(21, _) -> True
+            enemy.Score(_, 21) -> True
+            enemy.Score(_, _) -> False
+          }
+        })
+
+      let blackjack_cards =
+        blackjacks
+        |> list.flat_map(fn(e) { e.cards })
+      let bust_cards =
+        busts
+        |> list.flat_map(fn(e) { e.cards })
 
       #(
         Model(
@@ -407,6 +694,10 @@ pub fn update(
           next_id: next_id,
           card_cooldown: float.max(new_card_cooldown -. dt, 0.0),
           reload_timer: float.max(new_reload_timer -. dt, 0.0),
+          enemy_deck: new_enemy_deck,
+          enemies: new_enemies,
+          blackjack_buffer: blackjack_cards,
+          bust_buffer: bust_cards,
         ),
         effect.tick(Tick),
         Some(new_physics_world),

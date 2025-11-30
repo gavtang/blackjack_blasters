@@ -16,6 +16,12 @@ pub type Card {
     def: CardDef,
     tween: animation.Tween(transform.Transform),
   )
+  CardContained(
+    id: Int,
+    def: CardDef,
+    team: Team,
+    tween: animation.Tween(transform.Transform),
+  )
   // TODO add info for kinematic move
 }
 
@@ -24,6 +30,11 @@ pub type Suit {
   Diamonds
   Hearts
   Spades
+}
+
+pub type Team {
+  Player
+  Enemy
 }
 
 pub type Rank {
@@ -59,4 +70,13 @@ pub fn base_deck() -> List(Card) {
       animation.tween_transform(pos, pos, 1000.0, animation.EaseInOutSine),
     )
   })
+}
+
+pub fn rank_to_value(rank: Rank) -> Int {
+  case rank {
+    Rank(13) -> 10
+    Rank(12) -> 10
+    Rank(11) -> 10
+    Rank(other) -> other
+  }
 }
