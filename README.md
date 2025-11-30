@@ -1,27 +1,21 @@
-# blackjack_blasters
+# Blackjack Blasters
+This game was created for the 2025 Gleam Game Jam!
 
-[![Package Version](https://img.shields.io/hexpm/v/blackjack_blasters)](https://hex.pm/packages/blackjack_blasters)
-[![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/blackjack_blasters/)
 
+## Running the Game
 ```sh
-gleam add blackjack_blasters@1
-```
-```gleam
-import blackjack_blasters
-
-pub fn main() -> Nil {
-  // TODO: An example of the project in use
-}
+gleam run -m lustre/dev start  # Run the project at localhost:1234
+gleam run -m mascarpone bundle # Build a desktop bundle
 ```
 
-Further documentation can be found at <https://hexdocs.pm/blackjack_blasters>.
+Also playable on itch.io: <https://gavtang.itch.io/blackjack-blasters>
 
-## Development
+## Rules
+Launch cards from your hand at other cards that are flying on the screen
+Try to make clusters add up to a blackjack! (Ace = 1 or 11 | K Q J = 10)
+If you make a blackjack, keep all the cards. If you bust, only the cards you launched return to your deck.
 
-```sh
-gleam run   # Run the project
-gleam test  # Run the tests
-```
+Try to capture the whole deck!
 
 ## Asset Credits
 
@@ -29,20 +23,3 @@ Cute Card Deck by Dani Maccari
 <https://dani-maccari.itch.io/cute-cards>
 
 
-## Planning and Todos
-- Card ammo system: draw 3-5 face up before needing to reload
-- Spin Lucy on reload, switch to the lucyhappy sprite
-- Lucy starts with the diamond deck, other cards fly in face
-  up like space invaders (possibly from cards on the ground)
-- Implement collision detection
-- On hit, cards stack. Bust: >21 destroys the enemy
-- On blackjack: bonus points, maybe keep the enemy card?
-- Implement poker chip projectile
-    maybe score, maybe enemy bullets that deal damage (reduce score)
-
-## Physics notes
-- Need dynamic bodies for collisions to be detected
-- Can't currently switch body types, need to delete items based on phase
-- Node deletions are handled automatically based on diffing the node tree - but need different ID types
-- This does mean aligning positions manually - whenever the item changes, grabbing the position to assign it an inital
-- Alternatively: handle collision detection manually

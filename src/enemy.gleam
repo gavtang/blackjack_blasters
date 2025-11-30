@@ -22,39 +22,39 @@ pub fn enemy_deck_base_vec() -> vec3.Vec3(Float) {
 }
 
 pub fn enemy_base_deck() -> List(Enemy) {
-  echo list.range(1, 13)
-    |> list.flat_map(fn(i) {
-      [
-        card.CardDef(card.Hearts, card.Rank(i)),
-        card.CardDef(card.Clubs, card.Rank(i)),
-        card.CardDef(card.Spades, card.Rank(i)),
-      ]
-    })
-    |> list.shuffle()
-    |> list.index_map(fn(def, i) {
-      let pos =
-        enemy_deck_base_vec()
-        |> transform.at()
-        |> transform.translate(vec3.Vec3(0.0, int.to_float(i) *. 0.03, 0.0))
-        |> transform.with_euler_rotation(vec3.Vec3(math.pi() /. 2.0, 0.0, 0.0))
-      // aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-      Enemy(
-        cards: [
-          card.CardContained(
-            i + 100,
-            def,
-            card.Enemy,
-            animation.tween_transform(pos, pos, 1000.0, animation.EaseInOutSine),
-          ),
-        ],
-        tween: animation.tween_transform(
-          pos,
-          pos,
-          1000.0,
-          animation.EaseInOutSine,
+  list.range(1, 13)
+  |> list.flat_map(fn(i) {
+    [
+      card.CardDef(card.Hearts, card.Rank(i)),
+      card.CardDef(card.Clubs, card.Rank(i)),
+      card.CardDef(card.Spades, card.Rank(i)),
+    ]
+  })
+  |> list.shuffle()
+  |> list.index_map(fn(def, i) {
+    let pos =
+      enemy_deck_base_vec()
+      |> transform.at()
+      |> transform.translate(vec3.Vec3(0.0, int.to_float(i) *. 0.03, 0.0))
+      |> transform.with_euler_rotation(vec3.Vec3(math.pi() /. 2.0, 0.0, 0.0))
+    // aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    Enemy(
+      cards: [
+        card.CardContained(
+          i + 100,
+          def,
+          card.Enemy,
+          animation.tween_transform(pos, pos, 1000.0, animation.EaseInOutSine),
         ),
-      )
-    })
+      ],
+      tween: animation.tween_transform(
+        pos,
+        pos,
+        1000.0,
+        animation.EaseInOutSine,
+      ),
+    )
+  })
 }
 
 pub fn enemy_flatten_cards(enemies: List(Enemy)) -> List(card.Card) {
